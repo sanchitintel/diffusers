@@ -477,7 +477,19 @@ class Attention(nn.Module):
 
         return attention_probs
 
-    def prepare_attention_mask(self, attention_mask, target_length, batch_size, out_dim=3):
+    def prepare_attention_mask(self, attention_mask, target_length, batch_size=None, out_dim=3):
+        if batch_size is None:
+            deprecate(
+                "batch_size=None",
+                "0.22.0",
+                (
+                    "Not passing the `batch_size` parameter to `prepare_attention_mask` can lead to incorrect"
+                    " attention mask preparation and is deprecated behavior. Please make sure to pass `batch_size` to"
+                    " `prepare_attention_mask` when preparing the attention_mask."
+                ),
+            )
+            batch_size = 1
+
         head_size = self.heads
         if attention_mask is None:
             return attention_mask
@@ -1004,15 +1016,15 @@ class AttnProcessor2_0:
         if attn.group_norm is not None:
             hidden_states = attn.group_norm(hidden_states.transpose(1, 2)).transpose(1, 2)
 
-        query = attn.to_q(hidden_states, scale=scale)
+        query = attn.to_q(hidden_states)
 
         if encoder_hidden_states is None:
             encoder_hidden_states = hidden_states
         elif attn.norm_cross:
             encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
 
-        key = attn.to_k(encoder_hidden_states, scale=scale)
-        value = attn.to_v(encoder_hidden_states, scale=scale)
+        key = attn.to_k(encoder_hidden_states)
+        value = attn.to_v(encoder_hidden_states)
 
         inner_dim = key.shape[-1]
         head_dim = inner_dim // attn.heads
@@ -1032,7 +1044,7 @@ class AttnProcessor2_0:
         hidden_states = hidden_states.to(query.dtype)
 
         # linear proj
-        hidden_states = attn.to_out[0](hidden_states, scale=scale)
+        hidden_states = attn.to_out[0](hidden_states)
         # dropout
         hidden_states = attn.to_out[1](hidden_states)
 
