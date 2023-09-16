@@ -192,6 +192,9 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
         self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)
         self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor)
         self.register_to_config(requires_safety_checker=requires_safety_checker)
+        self.sample_size = unet.config.sample_size
+        self.in_channels = unet.config.in_channels
+        self.HIGH_PRECISION_STEPS = 0
 
     def enable_vae_slicing(self):
         r"""
@@ -606,8 +609,8 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
                 "not-safe-for-work" (nsfw) content.
         """
         # 0. Default height and width to unet
-        height = height or self.unet.config.sample_size * self.vae_scale_factor
-        width = width or self.unet.config.sample_size * self.vae_scale_factor
+        height = height or self.sample_size * self.vae_scale_factor
+        width = width or self.sample_size * self.vae_scale_factor
 
         # 1. Check inputs. Raise error if not correct
         self.check_inputs(
@@ -622,7 +625,7 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
         else:
             batch_size = prompt_embeds.shape[0]
 
-        device = self._execution_device
+        device = torch.device("cpu")
         # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
         # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`
         # corresponds to doing no classifier free guidance.
@@ -653,7 +656,7 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
         timesteps = self.scheduler.timesteps
 
         # 5. Prepare latent variables
-        num_channels_latents = self.unet.config.in_channels
+        num_channels_latents = self.in_channels
         latents = self.prepare_latents(
             batch_size * num_images_per_prompt,
             num_channels_latents,
@@ -681,9 +684,19 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
                     latent_model_input,
                     t,
                     encoder_hidden_states=prompt_embeds,
-                    cross_attention_kwargs=cross_attention_kwargs,
-                    return_dict=False,
-                )[0]
+                )
+                if (i < self.HIGH_PRECISION_STEPS or i > len(timesteps)-1 - self.HIGH_PRECISION_STEPS) and hasattr(self, 'unet_fp32'):
+                    noise_pred = self.unet_fp32(
+                        latent_model_input.to(memory_format=torch.channels_last),
+                        t,
+                        encoder_hidden_states=prompt_embeds
+                    )['sample']
+                else:
+                    noise_pred = self.unet(
+                        latent_model_input.to(memory_format=torch.channels_last),
+                        t,
+                        encoder_hidden_states=prompt_embeds
+                    )['sample']
 
                 # perform guidance
                 if do_classifier_free_guidance:
