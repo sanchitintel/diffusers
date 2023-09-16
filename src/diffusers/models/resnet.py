@@ -634,12 +634,12 @@ class ResnetBlock2D(nn.Module):
                 else self.downsample(hidden_states)
             )
 
-        hidden_states = self.conv1(hidden_states, scale)
+        hidden_states = self.conv1(hidden_states)
 
         if self.time_emb_proj is not None:
             if not self.skip_time_act:
                 temb = self.nonlinearity(temb)
-            temb = self.time_emb_proj(temb, scale)[:, :, None, None]
+            temb = self.time_emb_proj(temb)[:, :, None, None]
 
         if temb is not None and self.time_embedding_norm == "default":
             hidden_states = hidden_states + temb
@@ -656,10 +656,10 @@ class ResnetBlock2D(nn.Module):
         hidden_states = self.nonlinearity(hidden_states)
 
         hidden_states = self.dropout(hidden_states)
-        hidden_states = self.conv2(hidden_states, scale)
+        hidden_states = self.conv2(hidden_states)
 
         if self.conv_shortcut is not None:
-            input_tensor = self.conv_shortcut(input_tensor, scale)
+            input_tensor = self.conv_shortcut(input_tensor)
 
         output_tensor = (input_tensor + hidden_states) / self.output_scale_factor
 
